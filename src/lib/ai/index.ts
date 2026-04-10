@@ -15,22 +15,19 @@ export async function getAIProvider(): Promise<AIProvider> {
 
   switch (settings.provider) {
     case "openai": {
-      // Prefer OAuth tokens (auto-refreshed), fall back to API key
-      const accessToken = settings.openaiTokens
-        ? await getValidOpenAIToken()
-        : null;
-
-      if (!accessToken && !settings.apiKey) {
-        throw new Error(
-          "OpenAI: no valid token or API key. Please re-connect in Settings."
-        );
+      const method = settings.openaiAuthMethod ?? (settings.openaiTokens ? "oauth" : "apikey");
+      if (method === "oauth") {
+        const accessToken = await getValidOpenAIToken();
+        if (!accessToken) {
+          throw new Error("OpenAI OAuth token missing or expired. Please reconnect in Settings.");
+        }
+        return new OpenAIProvider({ model: settings.model, accessToken });
+      } else {
+        if (!settings.apiKey) {
+          throw new Error("OpenAI API key not configured. Please open Settings.");
+        }
+        return new OpenAIProvider({ model: settings.model, apiKey: settings.apiKey });
       }
-
-      return new OpenAIProvider({
-        model: settings.model,
-        apiKey: settings.apiKey,
-        accessToken: accessToken ?? undefined,
-      });
     }
     case "anthropic":
       if (!settings.apiKey) throw new Error("Anthropic API key not configured");

@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS: AISettings = {
   provider: "openai",
   model: "gpt-5.4-mini",
   apiKey: "",
+  openaiAuthMethod: "apikey",
   openaiTokens: undefined,
 };
 
@@ -19,7 +20,12 @@ export function AIProviderSettings() {
   useEffect(() => {
     chrome.storage.sync.get(STORAGE_KEYS.AI_SETTINGS).then((result) => {
       if (result[STORAGE_KEYS.AI_SETTINGS]) {
-        setSettings(result[STORAGE_KEYS.AI_SETTINGS]);
+        const stored: AISettings = result[STORAGE_KEYS.AI_SETTINGS];
+        // Backward compat: if tokens exist but method wasn't set, derive it
+        if (!stored.openaiAuthMethod) {
+          stored.openaiAuthMethod = stored.openaiTokens ? "oauth" : "apikey";
+        }
+        setSettings(stored);
       }
     });
   }, []);
@@ -34,6 +40,15 @@ export function AIProviderSettings() {
     });
   }
 
+  function selectAuthMethod(method: "apikey" | "oauth") {
+    setSettings((prev) => ({
+      ...prev,
+      openaiAuthMethod: method,
+      // Clear the other method's credentials when switching
+      ...(method === "apikey" ? { openaiTokens: undefined } : { apiKey: "" }),
+    }));
+  }
+
   async function save() {
     await chrome.storage.sync.set({ [STORAGE_KEYS.AI_SETTINGS]: settings });
     setSaved(true);
@@ -45,9 +60,8 @@ export function AIProviderSettings() {
     setOauthError(null);
     try {
       const tokens: OpenAITokens = await launchOpenAIOAuth();
-      const updated = { ...settings, openaiTokens: tokens };
+      const updated: AISettings = { ...settings, openaiTokens: tokens, openaiAuthMethod: "oauth" };
       setSettings(updated);
-      // Immediately persist
       await chrome.storage.sync.set({ [STORAGE_KEYS.AI_SETTINGS]: updated });
     } catch (err) {
       setOauthError(err instanceof Error ? err.message : "OAuth failed");
@@ -57,14 +71,10 @@ export function AIProviderSettings() {
   }
 
   function disconnectOpenAI() {
-    update("openaiTokens", undefined);
+    setSettings((prev) => ({ ...prev, openaiTokens: undefined }));
   }
 
   const isOAuthConnected = !!settings.openaiTokens;
-  const tokenExpiry = settings.openaiTokens
-    ? new Date(settings.openaiTokens.expiresAt)
-    : null;
-
   const models = MODEL_OPTIONS[settings.provider];
 
   return (
@@ -110,27 +120,48 @@ export function AIProviderSettings() {
         </select>
       </div>
 
-      {/* OpenAI: OAuth + API key */}
+      {/* OpenAI: choose one auth method */}
       {settings.provider === "openai" && (
-        <div className="space-y-4">
-          {/* OAuth */}
-          <div className="p-3 rounded-lg border border-gray-200 bg-gray-50">
-            <div className="text-sm font-medium text-gray-700 mb-2">
-              Sign in with ChatGPT
-              <span className="ml-2 text-xs font-normal text-gray-400">
-                (uses your ChatGPT Plus/Pro subscription)
-              </span>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Authentication</label>
+            <div className="flex gap-2">
+              {(["apikey", "oauth"] as const).map((method) => (
+                <button
+                  key={method}
+                  onClick={() => selectAuthMethod(method)}
+                  className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
+                    settings.openaiAuthMethod === method
+                      ? "bg-blue-600 border-blue-600 text-white"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-50"
+                  }`}
+                >
+                  {method === "apikey" ? "API Key" : "Sign in with ChatGPT"}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {isOAuthConnected ? (
-              <div className="space-y-1">
+          {/* API key */}
+          {settings.openaiAuthMethod === "apikey" && (
+            <div>
+              <input
+                type="password"
+                value={settings.apiKey}
+                onChange={(e) => update("apiKey", e.target.value)}
+                placeholder="sk-..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
+
+          {/* OAuth */}
+          {settings.openaiAuthMethod === "oauth" && (
+            <div className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+              {isOAuthConnected ? (
                 <div className="flex items-center gap-2">
                   <span className="text-green-600 text-sm">✓ Connected</span>
-                  {tokenExpiry && (
-                    <span className="text-xs text-gray-400">
-                      · refreshes automatically
-                    </span>
-                  )}
+                  <span className="text-xs text-gray-400">· refreshes automatically</span>
                   <button
                     onClick={disconnectOpenAI}
                     className="ml-auto text-xs text-gray-400 hover:text-red-500 underline"
@@ -138,48 +169,29 @@ export function AIProviderSettings() {
                     Disconnect
                   </button>
                 </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <button
-                  onClick={connectOpenAI}
-                  disabled={oauthLoading}
-                  className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm rounded-lg font-medium disabled:opacity-40"
-                >
-                  {oauthLoading ? (
-                    <>
-                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Connecting…
-                    </>
-                  ) : (
-                    "Connect with OpenAI"
+              ) : (
+                <div className="space-y-1">
+                  <button
+                    onClick={connectOpenAI}
+                    disabled={oauthLoading}
+                    className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm rounded-lg font-medium disabled:opacity-40"
+                  >
+                    {oauthLoading ? (
+                      <>
+                        <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Connecting…
+                      </>
+                    ) : (
+                      "Connect with OpenAI"
+                    )}
+                  </button>
+                  {oauthError && (
+                    <p className="text-xs text-red-500">{oauthError}</p>
                   )}
-                </button>
-                {oauthError && (
-                  <p className="text-xs text-red-500">{oauthError}</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* API key fallback */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              API key
-              {isOAuthConnected && (
-                <span className="ml-2 text-xs font-normal text-gray-400">
-                  (not used while signed in via OAuth)
-                </span>
+                </div>
               )}
-            </label>
-            <input
-              type="password"
-              value={settings.apiKey}
-              onChange={(e) => update("apiKey", e.target.value)}
-              placeholder="sk-..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+            </div>
+          )}
         </div>
       )}
 

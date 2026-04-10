@@ -4,7 +4,9 @@ export interface AISettings {
   provider: AIProviderName;
   model: string;
   apiKey: string;
-  /** Stored OpenAI OAuth tokens (access + refresh + expiry). Takes precedence over apiKey. */
+  /** How to authenticate with OpenAI — explicit choice, not derived */
+  openaiAuthMethod?: "apikey" | "oauth";
+  /** Stored OpenAI OAuth tokens (access + refresh + expiry) */
   openaiTokens?: {
     accessToken: string;
     refreshToken: string;
