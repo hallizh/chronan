@@ -4,8 +4,12 @@ export interface AISettings {
   provider: AIProviderName;
   model: string;
   apiKey: string;
-  /** OpenAI OAuth access token — takes precedence over apiKey for OpenAI */
-  openaiAccessToken?: string;
+  /** Stored OpenAI OAuth tokens (access + refresh + expiry). Takes precedence over apiKey. */
+  openaiTokens?: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: number;
+  };
 }
 
 export const MODEL_OPTIONS: Record<AIProviderName, { id: string; label: string }[]> = {

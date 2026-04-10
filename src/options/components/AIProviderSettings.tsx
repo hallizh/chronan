@@ -1,28 +1,25 @@
 import { useEffect, useState } from "react";
 import { STORAGE_KEYS } from "@/constants";
 import { MODEL_OPTIONS, type AIProviderName, type AISettings } from "@/types/ai";
-import { launchOpenAIOAuth } from "@/lib/ai/openai";
+import { launchOpenAIOAuth, type OpenAITokens } from "@/lib/ai/openai";
 
 const DEFAULT_SETTINGS: AISettings = {
   provider: "openai",
   model: "gpt-4o-mini",
   apiKey: "",
-  openaiAccessToken: undefined,
+  openaiTokens: undefined,
 };
 
 export function AIProviderSettings() {
   const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
-  const [oauthStatus, setOauthStatus] = useState<string | null>(null);
+  const [oauthError, setOauthError] = useState<string | null>(null);
 
   useEffect(() => {
     chrome.storage.sync.get(STORAGE_KEYS.AI_SETTINGS).then((result) => {
       if (result[STORAGE_KEYS.AI_SETTINGS]) {
         setSettings(result[STORAGE_KEYS.AI_SETTINGS]);
-        if (result[STORAGE_KEYS.AI_SETTINGS].openaiAccessToken) {
-          setOauthStatus("Connected via OpenAI");
-        }
       }
     });
   }, []);
@@ -30,7 +27,6 @@ export function AIProviderSettings() {
   function update<K extends keyof AISettings>(key: K, value: AISettings[K]) {
     setSettings((prev) => {
       const next = { ...prev, [key]: value };
-      // Reset model when provider changes
       if (key === "provider") {
         next.model = MODEL_OPTIONS[value as AIProviderName][0].id;
       }
@@ -46,26 +42,28 @@ export function AIProviderSettings() {
 
   async function connectOpenAI() {
     setOauthLoading(true);
-    setOauthStatus(null);
+    setOauthError(null);
     try {
-      const token = await launchOpenAIOAuth();
-      update("openaiAccessToken", token);
-      setOauthStatus("Connected via OpenAI ✓");
-      // Auto-save
-      await chrome.storage.sync.set({
-        [STORAGE_KEYS.AI_SETTINGS]: { ...settings, openaiAccessToken: token },
-      });
+      const tokens: OpenAITokens = await launchOpenAIOAuth();
+      const updated = { ...settings, openaiTokens: tokens };
+      setSettings(updated);
+      // Immediately persist
+      await chrome.storage.sync.set({ [STORAGE_KEYS.AI_SETTINGS]: updated });
     } catch (err) {
-      setOauthStatus(`Failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setOauthError(err instanceof Error ? err.message : "OAuth failed");
     } finally {
       setOauthLoading(false);
     }
   }
 
   function disconnectOpenAI() {
-    update("openaiAccessToken", undefined);
-    setOauthStatus(null);
+    update("openaiTokens", undefined);
   }
+
+  const isOAuthConnected = !!settings.openaiTokens;
+  const tokenExpiry = settings.openaiTokens
+    ? new Date(settings.openaiTokens.expiresAt)
+    : null;
 
   const models = MODEL_OPTIONS[settings.provider];
 
@@ -73,7 +71,7 @@ export function AIProviderSettings() {
     <section className="space-y-4">
       <h2 className="font-semibold text-gray-900">AI Provider</h2>
       <p className="text-sm text-gray-500">
-        Used to extract ingredients from recipe pages. Your API key is stored locally in Chrome.
+        Used to extract ingredients from recipe pages. Your keys are stored locally in Chrome.
       </p>
 
       {/* Provider selector */}
@@ -84,7 +82,7 @@ export function AIProviderSettings() {
             <button
               key={p}
               onClick={() => update("provider", p)}
-              className={`px-3 py-1.5 rounded-lg border text-sm font-medium capitalize ${
+              className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
                 settings.provider === p
                   ? "bg-blue-600 border-blue-600 text-white"
                   : "border-gray-300 text-gray-700 hover:bg-gray-50"
@@ -114,42 +112,64 @@ export function AIProviderSettings() {
 
       {/* OpenAI: OAuth + API key */}
       {settings.provider === "openai" && (
-        <div className="space-y-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Sign in with OpenAI
-            </label>
-            {settings.openaiAccessToken ? (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-green-600">{oauthStatus}</span>
-                <button
-                  onClick={disconnectOpenAI}
-                  className="text-sm text-gray-500 hover:text-red-500 underline"
-                >
-                  Disconnect
-                </button>
+        <div className="space-y-4">
+          {/* OAuth */}
+          <div className="p-3 rounded-lg border border-gray-200 bg-gray-50">
+            <div className="text-sm font-medium text-gray-700 mb-2">
+              Sign in with ChatGPT
+              <span className="ml-2 text-xs font-normal text-gray-400">
+                (uses your ChatGPT Plus/Pro subscription)
+              </span>
+            </div>
+
+            {isOAuthConnected ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-green-600 text-sm">✓ Connected</span>
+                  {tokenExpiry && (
+                    <span className="text-xs text-gray-400">
+                      · refreshes automatically
+                    </span>
+                  )}
+                  <button
+                    onClick={disconnectOpenAI}
+                    className="ml-auto text-xs text-gray-400 hover:text-red-500 underline"
+                  >
+                    Disconnect
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3">
+              <div className="space-y-1">
                 <button
                   onClick={connectOpenAI}
                   disabled={oauthLoading}
-                  className="px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm rounded-lg font-medium disabled:opacity-40"
+                  className="flex items-center gap-2 px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm rounded-lg font-medium disabled:opacity-40"
                 >
-                  {oauthLoading ? "Connecting…" : "Connect with OpenAI"}
+                  {oauthLoading ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Connecting…
+                    </>
+                  ) : (
+                    "Connect with OpenAI"
+                  )}
                 </button>
-                {oauthStatus && (
-                  <span className="text-sm text-red-500">{oauthStatus}</span>
+                {oauthError && (
+                  <p className="text-xs text-red-500">{oauthError}</p>
                 )}
               </div>
             )}
           </div>
 
+          {/* API key fallback */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Or use API key
-              {settings.openaiAccessToken && (
-                <span className="text-gray-400 font-normal ml-1">(overridden by OAuth)</span>
+              API key
+              {isOAuthConnected && (
+                <span className="ml-2 text-xs font-normal text-gray-400">
+                  (not used while signed in via OAuth)
+                </span>
               )}
             </label>
             <input
@@ -171,9 +191,7 @@ export function AIProviderSettings() {
             type="password"
             value={settings.apiKey}
             onChange={(e) => update("apiKey", e.target.value)}
-            placeholder={
-              settings.provider === "anthropic" ? "sk-ant-..." : "AIza..."
-            }
+            placeholder={settings.provider === "anthropic" ? "sk-ant-..." : "AIza..."}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
