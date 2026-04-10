@@ -1,6 +1,6 @@
 import type { AIProvider } from "./types";
 import type { Ingredient } from "@/types/recipe";
-import { SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
+import { SYSTEM_PROMPT, buildUserPrompt, buildIngredientLinesPrompt } from "./prompt";
 import { parseAIResponse } from "./parse";
 import { STORAGE_KEYS } from "@/constants";
 
@@ -34,7 +34,7 @@ export class OpenAIProvider implements AIProvider {
     }
   }
 
-  async extractIngredients(pageText: string, url: string): Promise<Ingredient[]> {
+  private async call(userPrompt: string): Promise<Ingredient[]> {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -45,7 +45,7 @@ export class OpenAIProvider implements AIProvider {
         model: this.model,
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: buildUserPrompt(pageText, url) },
+          { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" },
         temperature: 0.1,
@@ -62,6 +62,14 @@ export class OpenAIProvider implements AIProvider {
     };
     const content = data.choices[0]?.message?.content ?? "[]";
     return parseAIResponse(content);
+  }
+
+  extractIngredients(pageText: string, url: string): Promise<Ingredient[]> {
+    return this.call(buildUserPrompt(pageText, url));
+  }
+
+  parseIngredientLines(lines: string[]): Promise<Ingredient[]> {
+    return this.call(buildIngredientLinesPrompt(lines));
   }
 }
 

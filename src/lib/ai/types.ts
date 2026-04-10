@@ -2,6 +2,7 @@ import type { Ingredient } from "@/types/recipe";
 
 export interface AIProvider {
   extractIngredients(pageText: string, url: string): Promise<Ingredient[]>;
+  parseIngredientLines(lines: string[]): Promise<Ingredient[]>;
 }
 
 /** Raw ingredient shape returned by the AI before we enrich with IDs */

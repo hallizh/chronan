@@ -13,6 +13,23 @@ import type {
   MsgExtractResult,
   MsgSearchResult,
 } from "@/types/messages";
+
+/**
+ * Strip leading quantity + unit from a raw ingredient line so we have a
+ * recognisable product name even without AI.
+ * "1½ pounds boneless skinless chicken breasts" → "chicken breasts"
+ */
+function stripMeasurement(raw: string): string {
+  // Remove leading fraction/number + optional unit
+  let s = raw
+    .replace(/^[\s\d¼½¾⅓⅔⅛⅜⅝⅞.,/-]+\s*(?:pound|lb|ounce|oz|gram|g|kg|ml|l|liter|litre|cup|tablespoon|tbsp|teaspoon|tsp|clove|can|bunch|head|stalk|slice|piece|pkg|package)s?\.?\s*/i, "")
+    .replace(/^[\s\d¼½¾⅓⅔⅛⅜⅝⅞.,/-]+\s+/, ""); // bare numbers with no unit
+  // Strip common cooking descriptors
+  s = s.replace(/\b(?:boneless|skinless|lean|fresh|dried|frozen|chopped|diced|minced|sliced|grated|shredded|cooked|uncooked|raw|large|medium|small|extra|virgin|unsalted|salted|whole|ground|crushed|peeled|seedless|pitted|finely|roughly|thinly|halved)\b/gi, "");
+  s = s.replace(/\s+/g, " ").trim();
+  // Take the first 3 meaningful words to keep it concise
+  return s.split(/\s+/).slice(0, 3).join(" ") || raw;
+}
 import type { MatchedIngredient } from "@/types/recipe";
 
 export default function App() {
@@ -86,33 +103,36 @@ export default function App() {
 
   async function processIngredientLines(
     lines: string[],
-    url: string,
+    _url: string,
     _title: string
   ) {
-    // Use AI to parse the structured ingredient lines into searchable terms
-    const combined = lines.join("\n");
+    // Use the dedicated ingredient-lines parser so AI knows it's getting
+    // already-extracted lines, not full page text
     const result = await chrome.runtime.sendMessage({
-      type: "EXTRACT_WITH_AI",
-      pageText: combined,
-      url,
+      type: "PARSE_INGREDIENT_LINES",
+      lines,
     }) as MsgExtractResult;
 
     if (result.error || result.ingredients.length === 0) {
-      // Fall back: create minimal ingredients from the raw lines
-      const fallback: MatchedIngredient[] = lines.map((raw, i) => ({
-        id: `ing_${i}`,
-        raw,
-        name: raw,
-        quantity: 1,
-        unit: "",
-        searchTerm: raw,
-        searchTermEn: raw,
-        status: "searching",
-        matches: [],
-        selectedSku: null,
-        selectedQuantity: 1,
-        skipped: false,
-      }));
+      // Fallback: strip leading quantity + unit so the search term is at least
+      // a recognisable product name, not "1½ pounds boneless skinless chicken"
+      const fallback: MatchedIngredient[] = lines.map((raw, i) => {
+        const cleaned = stripMeasurement(raw);
+        return {
+          id: `ing_${i}`,
+          raw,
+          name: cleaned,
+          quantity: 1,
+          unit: "",
+          searchTerm: cleaned,
+          searchTermEn: cleaned,
+          status: "searching",
+          matches: [],
+          selectedSku: null,
+          selectedQuantity: 1,
+          skipped: false,
+        };
+      });
       bootstrapIngredients(fallback);
       return;
     }

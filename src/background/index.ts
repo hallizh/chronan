@@ -1,5 +1,5 @@
 import { setupKeepalive } from "./alarm";
-import { handleExtractWithAI } from "./handlers/recipe";
+import { handleExtractWithAI, handleParseIngredientLines } from "./handlers/recipe";
 import { handleSearchProducts } from "./handlers/search";
 import { handleAddToCart, handleAddToNote } from "./handlers/cart";
 import {
@@ -38,6 +38,8 @@ async function handleMessage(
   switch (message.type) {
     case "EXTRACT_WITH_AI":
       return handleExtractWithAI(message);
+    case "PARSE_INGREDIENT_LINES":
+      return handleParseIngredientLines(message);
     case "SEARCH_PRODUCTS":
       return handleSearchProducts(message);
     case "ADD_TO_NOTE":

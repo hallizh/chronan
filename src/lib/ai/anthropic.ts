@@ -1,6 +1,6 @@
 import type { AIProvider } from "./types";
 import type { Ingredient } from "@/types/recipe";
-import { SYSTEM_PROMPT, buildUserPrompt } from "./prompt";
+import { SYSTEM_PROMPT, buildUserPrompt, buildIngredientLinesPrompt } from "./prompt";
 import { parseAIResponse } from "./parse";
 
 export class AnthropicProvider implements AIProvider {
@@ -12,23 +12,20 @@ export class AnthropicProvider implements AIProvider {
     this.apiKey = opts.apiKey;
   }
 
-  async extractIngredients(pageText: string, url: string): Promise<Ingredient[]> {
+  private async call(userPrompt: string): Promise<Ingredient[]> {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": this.apiKey,
         "anthropic-version": "2023-06-01",
-        // Direct browser requests to Anthropic require the dangerous-direct-browser-access header
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: JSON.stringify({
         model: this.model,
         max_tokens: 2048,
         system: SYSTEM_PROMPT,
-        messages: [
-          { role: "user", content: buildUserPrompt(pageText, url) },
-        ],
+        messages: [{ role: "user", content: userPrompt }],
       }),
     });
 
@@ -42,5 +39,13 @@ export class AnthropicProvider implements AIProvider {
     };
     const content = data.content.find((b) => b.type === "text")?.text ?? "[]";
     return parseAIResponse(content);
+  }
+
+  extractIngredients(pageText: string, url: string): Promise<Ingredient[]> {
+    return this.call(buildUserPrompt(pageText, url));
+  }
+
+  parseIngredientLines(lines: string[]): Promise<Ingredient[]> {
+    return this.call(buildIngredientLinesPrompt(lines));
   }
 }

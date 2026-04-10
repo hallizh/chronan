@@ -29,6 +29,11 @@ export interface MsgExtractWithAI {
   url: string;
 }
 
+export interface MsgParseIngredientLines {
+  type: "PARSE_INGREDIENT_LINES";
+  lines: string[];
+}
+
 export interface MsgSearchProducts {
   type: "SEARCH_PRODUCTS";
   query: string;
@@ -98,6 +103,7 @@ export type ContentResponse = MsgRecipeFound | MsgNoRecipe;
 
 export type BackgroundMessage =
   | MsgExtractWithAI
+  | MsgParseIngredientLines
   | MsgSearchProducts
   | MsgAddToNote
   | MsgAddToCart
