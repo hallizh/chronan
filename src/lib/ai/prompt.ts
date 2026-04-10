@@ -7,22 +7,21 @@ For each ingredient, return:
 - "name": clean English ingredient name, no quantities or descriptors (e.g. "chicken breast")
 - "quantity": number of supermarket units a shopper should buy — almost always 1 or 2, NOT the recipe measurement. A recipe calling for "1½ pounds chicken breast" still means buying 1 pack.
 - "unit": unit of the supermarket product (use "stk" for pieces/packs, "kg" for weight-sold items, "" if unclear)
-- "searchTerm": the core product name in Icelandic as you would type it into a supermarket search box — use the SHORTEST form that still identifies the product (1 word strongly preferred, 2 words max). Use the nominative singular base form. E.g. "kjúklingur", "hvítlaukur", "ólífuolía", "tómatar", "laukur", "smjör", "hveiti"
-- "searchTermEn": same in English, 1–2 words. E.g. "chicken", "garlic", "olive oil", "tomatoes", "onion", "butter", "flour"
+- "searchTerm": the core product name in Icelandic as you would type it into a supermarket search box — strip ALL quantities, units, and cooking descriptors. 1–3 words max. E.g. "kjúklingabringur", "hvítlaukur", "ólífuolía", "niðursoðnar tómatar"
+- "searchTermEn": same in English. E.g. "chicken breast", "garlic", "olive oil", "canned tomatoes"
 
 Rules:
-- searchTerm and searchTermEn must NEVER contain quantities, measurements, or descriptors like "boneless", "skinless", "breast", "fresh", "diced", "minced", "chopped", "organic", "large", "whole", "canned"
-- Prefer the broadest matching term: "kjúklingur" beats "kjúklingabringur", "tómatar" beats "niðursoðnar tómatar"
+- searchTerm and searchTermEn must NEVER contain quantities, measurements, or descriptors like "boneless", "skinless", "fresh", "diced", "minced", "chopped", "organic", "large", "whole"
 - Only include actual ingredients, not equipment or instructions
 - For compound ingredients (e.g. "chicken broth"), use the main item ("kjúklingasoð" / "chicken broth")
 - Return ONLY valid JSON array, no explanation, no markdown fences
 
 Example output:
 [
-  {"raw": "1½ pounds boneless skinless chicken breasts", "name": "chicken breast", "quantity": 1, "unit": "stk", "searchTerm": "kjúklingur", "searchTermEn": "chicken"},
+  {"raw": "1½ pounds boneless skinless chicken breasts", "name": "chicken breast", "quantity": 1, "unit": "stk", "searchTerm": "kjúklingabringur", "searchTermEn": "chicken breast"},
   {"raw": "3 cloves garlic", "name": "garlic", "quantity": 1, "unit": "stk", "searchTerm": "hvítlaukur", "searchTermEn": "garlic"},
   {"raw": "2 tbsp olive oil", "name": "olive oil", "quantity": 1, "unit": "stk", "searchTerm": "ólífuolía", "searchTermEn": "olive oil"},
-  {"raw": "400g canned tomatoes", "name": "canned tomatoes", "quantity": 1, "unit": "stk", "searchTerm": "tómatar", "searchTermEn": "tomatoes"}
+  {"raw": "400g canned tomatoes", "name": "canned tomatoes", "quantity": 1, "unit": "stk", "searchTerm": "niðursoðnar tómatar", "searchTermEn": "canned tomatoes"}
 ]`;
 
 export function buildUserPrompt(pageText: string, url: string): string {
@@ -36,8 +35,8 @@ Extract all ingredients and return them as a JSON array. Remember: searchTerm an
 
 export function buildIngredientLinesPrompt(lines: string[]): string {
   return `The following are ingredient lines from a recipe. Parse each one into a structured ingredient object.
-Remember: searchTerm must be the SHORTEST Icelandic word that identifies the product for a supermarket search — 1 word strongly preferred (e.g. "kjúklingur", not "kjúklingabringur" or "1.5 pounds boneless chicken").
-searchTermEn must be the SHORTEST English equivalent (e.g. "chicken", not "chicken breast" or "1.5 pounds boneless chicken breast").
+Remember: searchTerm must be a clean Icelandic grocery store search word (e.g. "kjúklingabringur", not "1.5 pounds boneless chicken").
+searchTermEn must be a clean English grocery store search word (e.g. "chicken breast", not "1.5 pounds boneless chicken breast").
 
 Ingredient lines:
 ${lines.join("\n")}

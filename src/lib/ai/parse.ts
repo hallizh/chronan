@@ -13,12 +13,20 @@ export function parseAIResponse(content: string): Ingredient[] {
     const parsed: unknown = JSON.parse(content);
     if (Array.isArray(parsed)) {
       raw = parsed;
-    } else if (parsed && typeof parsed === "object" && "ingredients" in parsed) {
-      raw = (parsed as Record<string, unknown>).ingredients;
+    } else if (parsed && typeof parsed === "object") {
+      const obj = parsed as Record<string, unknown>;
+      if ("ingredients" in obj) {
+        raw = obj.ingredients;
+      } else if ("name" in obj) {
+        // Model returned a single ingredient object instead of an array
+        raw = [obj];
+      } else {
+        // Try any array-valued key (e.g. "items", "result", "data")
+        const arrayVal = Object.values(obj).find((v) => Array.isArray(v));
+        raw = arrayVal ?? [];
+      }
     } else {
-      // Try to find the first JSON array in the string
-      const match = content.match(/\[[\s\S]*\]/);
-      raw = match ? JSON.parse(match[0]) : [];
+      raw = [];
     }
   } catch {
     // Last resort: try to find a JSON array in the string
