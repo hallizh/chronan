@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+:root {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  background: #f9fafb;
+  color: #111827;
+}

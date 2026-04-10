@@ -1,0 +1,190 @@
+import { useEffect, useState } from "react";
+import { STORAGE_KEYS } from "@/constants";
+import { MODEL_OPTIONS, type AIProviderName, type AISettings } from "@/types/ai";
+import { launchOpenAIOAuth } from "@/lib/ai/openai";
+
+const DEFAULT_SETTINGS: AISettings = {
+  provider: "openai",
+  model: "gpt-4o-mini",
+  apiKey: "",
+  openaiAccessToken: undefined,
+};
+
+export function AIProviderSettings() {
+  const [settings, setSettings] = useState<AISettings>(DEFAULT_SETTINGS);
+  const [saved, setSaved] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [oauthStatus, setOauthStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    chrome.storage.sync.get(STORAGE_KEYS.AI_SETTINGS).then((result) => {
+      if (result[STORAGE_KEYS.AI_SETTINGS]) {
+        setSettings(result[STORAGE_KEYS.AI_SETTINGS]);
+        if (result[STORAGE_KEYS.AI_SETTINGS].openaiAccessToken) {
+          setOauthStatus("Connected via OpenAI");
+        }
+      }
+    });
+  }, []);
+
+  function update<K extends keyof AISettings>(key: K, value: AISettings[K]) {
+    setSettings((prev) => {
+      const next = { ...prev, [key]: value };
+      // Reset model when provider changes
+      if (key === "provider") {
+        next.model = MODEL_OPTIONS[value as AIProviderName][0].id;
+      }
+      return next;
+    });
+  }
+
+  async function save() {
+    await chrome.storage.sync.set({ [STORAGE_KEYS.AI_SETTINGS]: settings });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function connectOpenAI() {
+    setOauthLoading(true);
+    setOauthStatus(null);
+    try {
+      const token = await launchOpenAIOAuth();
+      update("openaiAccessToken", token);
+      setOauthStatus("Connected via OpenAI ✓");
+      // Auto-save
+      await chrome.storage.sync.set({
+        [STORAGE_KEYS.AI_SETTINGS]: { ...settings, openaiAccessToken: token },
+      });
+    } catch (err) {
+      setOauthStatus(`Failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setOauthLoading(false);
+    }
+  }
+
+  function disconnectOpenAI() {
+    update("openaiAccessToken", undefined);
+    setOauthStatus(null);
+  }
+
+  const models = MODEL_OPTIONS[settings.provider];
+
+  return (
+    <section className="space-y-4">
+      <h2 className="font-semibold text-gray-900">AI Provider</h2>
+      <p className="text-sm text-gray-500">
+        Used to extract ingredients from recipe pages. Your API key is stored locally in Chrome.
+      </p>
+
+      {/* Provider selector */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+        <div className="flex gap-2">
+          {(["openai", "anthropic", "gemini"] as AIProviderName[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => update("provider", p)}
+              className={`px-3 py-1.5 rounded-lg border text-sm font-medium capitalize ${
+                settings.provider === p
+                  ? "bg-blue-600 border-blue-600 text-white"
+                  : "border-gray-300 text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              {p === "openai" ? "OpenAI" : p === "anthropic" ? "Anthropic" : "Gemini"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Model selector */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
+        <select
+          value={settings.model}
+          onChange={(e) => update("model", e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {models.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* OpenAI: OAuth + API key */}
+      {settings.provider === "openai" && (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sign in with OpenAI
+            </label>
+            {settings.openaiAccessToken ? (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-green-600">{oauthStatus}</span>
+                <button
+                  onClick={disconnectOpenAI}
+                  className="text-sm text-gray-500 hover:text-red-500 underline"
+                >
+                  Disconnect
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={connectOpenAI}
+                  disabled={oauthLoading}
+                  className="px-4 py-2 bg-black hover:bg-gray-800 text-white text-sm rounded-lg font-medium disabled:opacity-40"
+                >
+                  {oauthLoading ? "Connecting…" : "Connect with OpenAI"}
+                </button>
+                {oauthStatus && (
+                  <span className="text-sm text-red-500">{oauthStatus}</span>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Or use API key
+              {settings.openaiAccessToken && (
+                <span className="text-gray-400 font-normal ml-1">(overridden by OAuth)</span>
+              )}
+            </label>
+            <input
+              type="password"
+              value={settings.apiKey}
+              onChange={(e) => update("apiKey", e.target.value)}
+              placeholder="sk-..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Anthropic / Gemini: API key only */}
+      {settings.provider !== "openai" && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+          <input
+            type="password"
+            value={settings.apiKey}
+            onChange={(e) => update("apiKey", e.target.value)}
+            placeholder={
+              settings.provider === "anthropic" ? "sk-ant-..." : "AIza..."
+            }
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      )}
+
+      <button
+        onClick={save}
+        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg font-medium"
+      >
+        {saved ? "Saved ✓" : "Save settings"}
+      </button>
+    </section>
+  );
+}
